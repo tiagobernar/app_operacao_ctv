@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "robo-os",
+  "private_key_id": "f2c960d3d88375aa326aca6c650281c2bb3e6e14",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCd0hS8xMgJ4NY2\naFLLzXwffXTP9rlrTikd190yrbrIojS32R8NIsi0EOZRrEn9aYXYI/yuxuVJS7iU\nfWUpyuYNseJe2f1dPlOQgT/HXzJgRt261qldU6PUE5M34radM/QrE9WFRYHk1cJb\nuB1EzGzNazDiW0IOb9u+sByOZiRZCsJbeL4V4UFTMvcmcAozwlAUd11XCym3G+il\nlq0F0bBlgE9p82xngfAX6xu8sIY+hlETvRMzzSz79iF+4MEhqusTSGBqnHZw3D1U\nArdr4LxtPN17uPwHQAz+Tkvr8MODWFfMLnXp3CRu8SgFucC/Eqe+euhKc63F/UNv\n7a5ipbzjAgMBAAECggEAC71T05LjunBiHtv1xLk9UW5YoRueQVAoGNM03g80RLZk\nK4TYHXcH7PUQ3ORvAI236hMLOckLxz79tPX673frUvt3dkzK3wPC3Y3vu5nmOmkr\nFznekVWmayElo1OW9+ykbgvkpyw7dFU+RupUKwj10vX1RfE54a8Kbo3VIfaRH5pi\nYWBxrjHF5NkO8YsYBTB6xLxOQrml3vo68x/7RK0NTPqslSByj9kGuZyGsqtAVjDY\noCuqyd/s2R4FKGYQ9+nfDPdr4vBJJiZrXa/nKSI2ocM+idqBmfFnIL1aEWf9njQ3\nPADevfmfPak7TvzWvvllQvI3NgW+oUhs9rY0p8y1kQKBgQDJMJxFssd7uv8iQcAv\nS1z1GJ1l7RBoIvVUwF4GzQe+OKmNc2svIdNebFsHUkxW+pWw1rCOyIuxg4xWoll1\nQXV1ZfkrtPxmewY2ILVLHFByFmOXEderCrepVjWmObfyeqQPnBSHJcTxwgiHorbz\nj4SkbjvJsYNATC7KBHnTAv/L+wKBgQDI0M+aA6k7dAYNJ8veCy+IL6ALhldbg3JA\npNgcLwEw0kFvKSco1EadtvHlF18Jv341y0pumQJt0JbVf+JVl3yrP6NJYXAqgkcq\niTMEYtDyK+ZVvgDaSK0Xjt1sQoYqqcUQJSxTVg6ghHLyZngTnYJXvHNPG1SxX5mH\nRqHWwJFWOQKBgApSJhIlQ7qDM0dsnBFRCmnAY4KxEKBm+rLoU2qB5h3KBlitTRhT\n4eX8JQdRH31uyXMS8GfCvffTScW/+lrbis0E+C1X0YLoWL86GlLKFw5jO6SqU6gA\nmr9jHslyOI+F3xi15w+vzlSgoZNjs4L3H9TXmtWT96m6vsO6Sw2aH8k1AoGAUpqC\nKupCnLAXJSYvmACl5rEgdl0mZgBl6O1l8AHtzXVPcThOYV8gRRPR4NiCQXJBqkMb\nNO8/rohU4zGdmnOb1p1wv2iTSQkZ2QdisvUq2dLxBmgH1cJ7YOtlbXjX04jOBNwl\npYoKrkCNP+Sik/8AdLKSBAJMDkIy1xBY1guUPRECgYBr0sdLHYijRpRelvN4MLHP\nh66qwB2r9jf4DDsQ9gNPTpNOEKm/VlGuJGUnTYL+PPimT6ildfepHAGSCVhZxhol\n0hlDwIGtel7rHp/QVHgCeAdy2PYYELf+453QXiRxFF9jbBpanVKJfI7n6Hvze/Lb\nZ4/3WaZi9hbDbZ1plEVq2g==\n-----END PRIVATE KEY-----\n",
+  "client_email": "robozap@robo-os.iam.gserviceaccount.com",
+  "client_id": "104282615141369103724",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/robozap%40robo-os.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

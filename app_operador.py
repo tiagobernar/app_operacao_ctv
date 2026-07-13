@@ -97,6 +97,10 @@ import json
 def obter_conexao():
     # Lê as credenciais de forma segura direto do Cofre do Streamlit
     credenciais = json.loads(st.secrets["google_credentials"])
+    
+    # CORREÇÃO MÁGICA: Conserta as quebras de linha da chave privada que o Streamlit bagunça
+    credenciais["private_key"] = credenciais["private_key"].replace("\\n", "\n")
+    
     return gspread.service_account_from_dict(credenciais)
 
 def fazer_upload_foto(foto_bytes):

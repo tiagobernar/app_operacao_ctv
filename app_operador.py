@@ -399,7 +399,8 @@ def registrar_evento_roteiro(operador, evento):
     try:
         aba_status = planilha.worksheet("STATUS_OPERADORES")
     except gspread.exceptions.WorksheetNotFound:
-        aba_status = planilha.add_worksheet(title="STATUS_OPERADORES", rows="1000", cols="4")
+        # CORREÇÃO AQUI: Números sem aspas (rows=1000, cols=4)
+        aba_status = planilha.add_worksheet(title="STATUS_OPERADORES", rows=1000, cols=4)
         aba_status.append_row(["Data/Hora", "Operador", "Evento", "Data Referencia"])
 
     agora = datetime.now()

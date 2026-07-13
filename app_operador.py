@@ -8,6 +8,7 @@ import time
 import streamlit as st
 import re
 import unicodedata
+import json
 from streamlit_cookies_manager import EncryptedCookieManager
 
 st.set_page_config(page_title="OPERAÇÃO CTV", page_icon="📱", layout="centered")

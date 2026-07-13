@@ -95,11 +95,15 @@ COL_CONCLUSAO = "Conclusão"
 
 def obter_conexao():
     try:
-        # Lê as credenciais de forma segura direto do Cofre do Streamlit
-        credenciais = json.loads(st.secrets["google_credentials"])
-        # CORREÇÃO MÁGICA: Conserta as quebras de linha da chave privada que o Streamlit bagunça
-        if "\\n" in credenciais["private_key"]:
-            credenciais["private_key"] = credenciais["private_key"].replace("\\n", "\n")
+        # Lê o segredo. Se for texto, converte de JSON. Se já for dicionário, usa direto.
+        segredo = st.secrets["google_credentials"]
+        credenciais = json.loads(segredo) if isinstance(segredo, str) else dict(segredo)
+        
+        # Correção bruta da Chave Privada (Garante que o Google aceite a assinatura)
+        chave_privada = credenciais.get("private_key", "")
+        chave_privada = chave_privada.replace("\\n", "\n").strip('"').strip("'")
+        credenciais["private_key"] = chave_privada
+        
         return gspread.service_account_from_dict(credenciais)
     except Exception as e:
         st.error(f"Erro ao conectar com o Google: {e}")
@@ -212,7 +216,7 @@ def carregar_tarefas(operador):
                 linha = int(row['Linha_Planilha'])
                 if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
                 if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
-                # Deixa a conclusão em branco (Silencioso)
+                # Deixa a conclusão em branco silenciosamente
                 if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
                 
                 df_respostas.at[idx, 'Operador Atribuído'] = ""

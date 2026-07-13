@@ -169,25 +169,70 @@ def carregar_tarefas(operador):
         df_respostas['OS'] = "OS-" + (df_respostas.index + 2).astype(str)
         df_respostas[COL_MATRICULA] = df_respostas[COL_MATRICULA].astype(str).apply(lambda x: x.split('.')[0]).str.strip()
         
+        # PROPAGANDO INFORMAÇÃO PELA PLANILHA ANTES DE FILTRAR
+        df_respostas['Operador Atribuído'] = df_respostas.groupby(COL_MATRICULA)['Operador Atribuído'].ffill().fillna("")
+        df_respostas['Data Programada'] = df_respostas.groupby(COL_MATRICULA)['Data Programada'].ffill().fillna("")
+        df_respostas['Operador Atribuído'] = df_respostas['Operador Atribuído'].replace('-', '')
+        df_respostas['Data Programada'] = df_respostas['Data Programada'].replace('-', '')
+
         data_hoje = datetime.now().strftime("%d/%m/%Y")
         
+        # =========================================================================
+        # INÍCIO DO "GUARDIÃO DA MEIA-NOITE" (App do Operador)
+        # =========================================================================
+        df_respostas['Data_Prog_Date'] = pd.to_datetime(df_respostas['Data Programada'], format='%d/%m/%Y', errors='coerce')
+        hoje_date = pd.Timestamp(datetime.now().date())
+        
+        is_pendente = ~df_respostas.get(COL_CONCLUSAO, pd.Series()).str.contains("EXECUTAD|DEVOLVID", na=False)
+        is_anterior = df_respostas['Data_Prog_Date'] < hoje_date
+        has_operador = (df_respostas['Operador Atribuído'] != "") & (df_respostas['Operador Atribuído'] != "-")
+        
+        vencidas = df_respostas[is_pendente & is_anterior & has_operador]
+        
+        if not vencidas.empty:
+            header_upper = [str(h).strip().upper() for h in aba_respostas.row_values(1)]
+            col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else None
+            col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
+            col_conc = None
+            if "CONCLUSÃO" in header_upper: col_conc = header_upper.index("CONCLUSÃO") + 1
+            elif "CONCLUSAO" in header_upper: col_conc = header_upper.index("CONCLUSAO") + 1
+            
+            celulas = []
+            for idx, row in vencidas.iterrows():
+                linha = int(row['Linha_Planilha'])
+                if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
+                if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
+                # Deixa a conclusão em branco
+                if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
+                
+                df_respostas.at[idx, 'Operador Atribuído'] = ""
+                df_respostas.at[idx, 'Data Programada'] = ""
+                
+            if celulas:
+                aba_respostas.update_cells(celulas)
+        # =========================================================================
+
+        # LENDO O STATUS DA NOVA ABA SEPARADA
         roteiro_iniciado = False
         roteiro_finalizado = False
         
-        mask_eventos = (df_respostas[COL_MATRICULA] == 'ROTEIRO_SISTEMA') & \
-                       (df_respostas['Operador Atribuído'].astype(str).str.strip() == operador.strip()) & \
-                       (df_respostas['Data Programada'].astype(str).str.strip() == data_hoje)
-                       
-        df_eventos = df_respostas[mask_eventos]
-        
-        if not df_eventos.empty:
-            ultimo_evento = str(df_eventos.iloc[-1]['Conclusão']).strip().upper()
-            if ultimo_evento == "INICIADO":
-                roteiro_iniciado = True
-            elif ultimo_evento == "FINALIZADO":
-                roteiro_finalizado = True
+        try:
+            aba_status = client.open("Cópia de Controle Calçadas e Paredes TESTE").worksheet("STATUS_OPERADORES")
+            df_status = pd.DataFrame(aba_status.get_all_records())
+            
+            if not df_status.empty:
+                mask_eventos = (df_status['Operador'].astype(str).str.strip() == operador.strip()) & \
+                               (df_status['Data Referencia'].astype(str).str.strip() == data_hoje)
+                df_eventos = df_status[mask_eventos]
                 
-        mask_validas = df_respostas[COL_MATRICULA] != 'ROTEIRO_SISTEMA'
+                if not df_eventos.empty:
+                    ultimo_evento = str(df_eventos.iloc[-1]['Evento']).strip().upper()
+                    if ultimo_evento == "INICIADO": roteiro_iniciado = True
+                    elif ultimo_evento == "FINALIZADO": roteiro_finalizado = True
+        except Exception:
+            pass # Se a aba não existir ainda, apenas ignora
+                
+        mask_validas = df_respostas[COL_MATRICULA] != 'ROTEIRO_SISTEMA' # Filtro mantido por segurança caso existam dados velhos
         df_respostas = df_respostas[mask_validas].reset_index(drop=True)
         df_formulas = df_formulas[mask_validas].reset_index(drop=True)
         
@@ -270,6 +315,22 @@ def salvar_linha_segura(aba, nova_linha):
         try: aba.update(range_name=intervalo, values=[nova_linha], value_input_option='USER_ENTERED')
         except TypeError: aba.update(intervalo, [nova_linha], value_input_option='USER_ENTERED')
 
+def atualizar_status_linha(linha_planilha, novo_status):
+    try:
+        client = obter_conexao()
+        planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
+        aba = planilha.worksheet("Respostas ao formulário 1")
+        header = [str(h).strip().upper() for h in aba.row_values(1)]
+        
+        col_idx_conc = None
+        if "CONCLUSÃO" in header: col_idx_conc = header.index("CONCLUSÃO") + 1
+        elif "CONCLUSAO" in header: col_idx_conc = header.index("CONCLUSAO") + 1
+        
+        if col_idx_conc is not None:
+            aba.update_cell(int(linha_planilha), col_idx_conc, novo_status)
+    except Exception:
+        pass 
+
 def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3):
     client = obter_conexao()
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
@@ -288,10 +349,11 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3)
     st.cache_data.clear()
     return True
 
-def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, foto_bytes):
+def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, foto_bytes, linha_planilha):
     client = obter_conexao()
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
     aba = planilha.worksheet("Respostas ao formulário 1")
+    
     agora = datetime.now()
     data_formatada = agora.strftime("%d/%m/%Y %H:%M:%S")
     link_foto = fazer_upload_foto(foto_bytes) if foto_bytes else ""
@@ -300,34 +362,39 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     
     nova_linha = [data_formatada, matricula, servico, conclusao_devolucao, operador, link_foto, "", "", cidade, bairro]
     salvar_linha_segura(aba, nova_linha)
+    
+    header_upper = [str(h).strip().upper() for h in aba.row_values(1)]
+    col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else None
+    col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
+    
+    celulas = []
+    if col_op: celulas.append(gspread.Cell(row=int(linha_planilha), col=col_op, value="-"))
+    if col_dt: celulas.append(gspread.Cell(row=int(linha_planilha), col=col_dt, value="-"))
+    
+    if celulas:
+        aba.update_cells(celulas)
+        
     st.cache_data.clear() 
     return True
 
 def registrar_evento_roteiro(operador, evento):
     client = obter_conexao()
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
-    aba = planilha.worksheet("Respostas ao formulário 1")
-    header = [str(h).strip() for h in aba.row_values(1)]
     
-    col_op = header.index("Operador Atribuído") if "Operador Atribuído" in header else len(header)
-    col_dt = header.index("Data Programada") if "Data Programada" in header else len(header) + 1
-    
+    # Tenta abrir a aba de status, se não existir, cria automaticamente
+    try:
+        aba_status = planilha.worksheet("STATUS_OPERADORES")
+    except gspread.exceptions.WorksheetNotFound:
+        aba_status = planilha.add_worksheet(title="STATUS_OPERADORES", rows="1000", cols="4")
+        aba_status.append_row(["Data/Hora", "Operador", "Evento", "Data Referencia"])
+
     agora = datetime.now()
     data_formatada = agora.strftime("%d/%m/%Y %H:%M:%S")
     data_hoje = agora.strftime("%d/%m/%Y")
     
-    tamanho_linha = max(10, col_op + 1, col_dt + 1)
-    nova_linha = ["" for _ in range(tamanho_linha)]
+    nova_linha = [data_formatada, operador, evento, data_hoje]
     
-    nova_linha[0] = data_formatada
-    nova_linha[1] = "ROTEIRO_SISTEMA"
-    nova_linha[2] = "SISTEMA"
-    nova_linha[3] = evento
-    nova_linha[4] = operador
-    nova_linha[col_op] = operador
-    nova_linha[col_dt] = data_hoje
-    
-    aba.append_row(nova_linha, value_input_option='USER_ENTERED')
+    aba_status.append_row(nova_linha, value_input_option='USER_ENTERED')
     return True
 
 def finalizar_roteiro_sem_poluir(df_pendentes):
@@ -336,35 +403,26 @@ def finalizar_roteiro_sem_poluir(df_pendentes):
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
     aba = planilha.worksheet("Respostas ao formulário 1")
     header = [str(h).strip() for h in aba.row_values(1)]
+    header_upper = [h.upper() for h in header]
     
-    if "Conclusão" not in header:
-        col_idx_conc = len(header) + 1
-        aba.update_cell(1, col_idx_conc, "Conclusão")
-    else: 
-        col_idx_conc = header.index("Conclusão") + 1
+    col_idx_conc = None
+    if "CONCLUSÃO" in header_upper: col_idx_conc = header_upper.index("CONCLUSÃO") + 1
+    elif "CONCLUSAO" in header_upper: col_idx_conc = header_upper.index("CONCLUSAO") + 1
+    
+    col_idx_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else None
+    col_idx_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
     
     celulas = []
     for _, row in df_pendentes.iterrows():
         linha = int(row['Linha_Planilha'])
-        celulas.append(gspread.Cell(row=linha, col=col_idx_conc, value="DEVOLVIDO: FIM DE TURNO"))
+        # Limpa silenciosamente a conclusão, o operador e a data, devolvendo para a base limpinha
+        if col_idx_conc: celulas.append(gspread.Cell(row=linha, col=col_idx_conc, value=""))
+        if col_idx_op: celulas.append(gspread.Cell(row=linha, col=col_idx_op, value="-"))
+        if col_idx_dt: celulas.append(gspread.Cell(row=linha, col=col_idx_dt, value="-"))
         
     if celulas:
         aba.update_cells(celulas)
     return True
-
-def atualizar_status_linha(linha_planilha, novo_status):
-    client = obter_conexao()
-    planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
-    aba = planilha.worksheet("Respostas ao formulário 1")
-    header = [str(h).strip() for h in aba.row_values(1)]
-    
-    if "Conclusão" not in header:
-        col_idx_conc = len(header) + 1
-        aba.update_cell(1, col_idx_conc, "Conclusão")
-    else: 
-        col_idx_conc = header.index("Conclusão") + 1
-        
-    aba.update_cell(int(linha_planilha), col_idx_conc, novo_status)
 
 # ==========================================
 # INTERFACE MOBILE (APP)
@@ -479,17 +537,9 @@ if st.session_state.autenticado:
                 cidade_bairro = row[COL_CIDADE].title()
                 nome_bairro = row['Bairro_Exibicao'].title()
                 
-                # === MÁGICA DO AUTO-HEAL: CURA A PLANILHA AUTOMATICAMENTE ===
-                status_atual = str(row.get(COL_CONCLUSAO, "")).upper()
-                if "ANDAMENTO" not in status_atual and "EXECUTAD" not in status_atual and "DEVOLVID" not in status_atual:
-                    if st.session_state.get("status_forcado") != matricula_ativa:
-                        atualizar_status_linha(linha_planilha, "EM ANDAMENTO")
-                        st.session_state.status_forcado = matricula_ativa
-                        st.cache_data.clear()
-                
                 if st.button("⬅️ Voltar para a Lista", use_container_width=True):
                     with st.spinner("Voltando..."):
-                        atualizar_status_linha(linha_planilha, "PENDENTE")
+                        atualizar_status_linha(linha_planilha, "PENDENTE") # DEVOLVE O STATUS PARA PENDENTE NA PLANILHA
                         st.session_state.os_aberta = None
                         if "status_forcado" in st.session_state: del st.session_state["status_forcado"]
                         st.cache_data.clear()
@@ -571,7 +621,7 @@ if st.session_state.autenticado:
                             else:
                                 f_bytes = foto1.getvalue() if foto1 is not None else None
                                 with st.spinner("Devolvendo..."):
-                                    sucesso = registrar_devolucao(matricula, servico, cidade_bairro, nome_bairro, texto_motivo, operador, f_bytes)
+                                    sucesso = registrar_devolucao(matricula, servico, cidade_bairro, nome_bairro, texto_motivo, operador, f_bytes, linha_planilha)
                                     if sucesso:
                                         st.session_state.os_aberta = None
                                         if "status_forcado" in st.session_state: del st.session_state["status_forcado"]
@@ -741,7 +791,7 @@ if st.session_state.autenticado:
                                         with col_btn1:
                                             if st.button("📂 Abrir Ordem", key=f"abrir_{matricula}", use_container_width=True):
                                                 with st.spinner("Abrindo..."):
-                                                    atualizar_status_linha(linha_planilha, "EM ANDAMENTO")
+                                                    atualizar_status_linha(linha_planilha, "EM ANDAMENTO") # ENVIA O STATUS PARA A PLANILHA
                                                     st.session_state.os_aberta = matricula
                                                     st.session_state.status_forcado = matricula
                                                     st.session_state.bairro_expandido = nome_bairro_tela
@@ -755,7 +805,7 @@ if st.session_state.autenticado:
                                     else:
                                         if st.button("📂 Abrir Ordem", key=f"abrir_unica_{matricula}", use_container_width=True):
                                             with st.spinner("Abrindo..."):
-                                                atualizar_status_linha(linha_planilha, "EM ANDAMENTO")
+                                                atualizar_status_linha(linha_planilha, "EM ANDAMENTO") # ENVIA O STATUS PARA A PLANILHA
                                                 st.session_state.os_aberta = matricula
                                                 st.session_state.status_forcado = matricula
                                                 st.session_state.bairro_expandido = nome_bairro_tela
@@ -764,7 +814,7 @@ if st.session_state.autenticado:
                                 elif status == "EM ANDAMENTO":
                                     if st.button("🚧 Continuar Execução", key=f"cont_{matricula}", type="primary", use_container_width=True):
                                         with st.spinner("Abrindo..."):
-                                            atualizar_status_linha(linha_planilha, "EM ANDAMENTO")
+                                            atualizar_status_linha(linha_planilha, "EM ANDAMENTO") # ENVIA O STATUS PARA A PLANILHA
                                             st.session_state.os_aberta = matricula
                                             st.session_state.status_forcado = matricula
                                             st.session_state.bairro_expandido = nome_bairro_tela

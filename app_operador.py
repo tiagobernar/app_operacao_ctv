@@ -8,8 +8,9 @@ import time
 import streamlit as st
 import re
 import unicodedata
-import json
 from streamlit_cookies_manager import EncryptedCookieManager
+import json
+
 st.set_page_config(page_title="OPERAÇÃO CTV", page_icon="📱", layout="centered")
 
 # ==========================================
@@ -92,16 +93,17 @@ COL_BAIRRO = "Informe o BAIRRO de Campina Grande"
 COL_SERVICO = "Qual o Serviço ?"
 COL_CONCLUSAO = "Conclusão"
 
-import json
-
 def obter_conexao():
-    # Lê as credenciais de forma segura direto do Cofre do Streamlit
-    credenciais = json.loads(st.secrets["google_credentials"])
-    
-    # CORREÇÃO MÁGICA: Conserta as quebras de linha da chave privada que o Streamlit bagunça
-    credenciais["private_key"] = credenciais["private_key"].replace("\\n", "\n")
-    
-    return gspread.service_account_from_dict(credenciais)
+    try:
+        # Lê as credenciais de forma segura direto do Cofre do Streamlit
+        credenciais = json.loads(st.secrets["google_credentials"])
+        # CORREÇÃO MÁGICA: Conserta as quebras de linha da chave privada que o Streamlit bagunça
+        if "\\n" in credenciais["private_key"]:
+            credenciais["private_key"] = credenciais["private_key"].replace("\\n", "\n")
+        return gspread.service_account_from_dict(credenciais)
+    except Exception as e:
+        st.error(f"Erro ao conectar com o Google: {e}")
+        st.stop()
 
 def fazer_upload_foto(foto_bytes):
     try:
@@ -210,7 +212,7 @@ def carregar_tarefas(operador):
                 linha = int(row['Linha_Planilha'])
                 if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
                 if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
-                # Deixa a conclusão em branco
+                # Deixa a conclusão em branco (Silencioso)
                 if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
                 
                 df_respostas.at[idx, 'Operador Atribuído'] = ""
@@ -238,9 +240,9 @@ def carregar_tarefas(operador):
                     if ultimo_evento == "INICIADO": roteiro_iniciado = True
                     elif ultimo_evento == "FINALIZADO": roteiro_finalizado = True
         except Exception:
-            pass # Se a aba não existir ainda, apenas ignora
+            pass 
                 
-        mask_validas = df_respostas[COL_MATRICULA] != 'ROTEIRO_SISTEMA' # Filtro mantido por segurança caso existam dados velhos
+        mask_validas = df_respostas[COL_MATRICULA] != 'ROTEIRO_SISTEMA' # Filtro mantido por segurança
         df_respostas = df_respostas[mask_validas].reset_index(drop=True)
         df_formulas = df_formulas[mask_validas].reset_index(drop=True)
         

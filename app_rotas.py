@@ -9,6 +9,7 @@ import time
 from streamlit_cookies_manager import EncryptedCookieManager
 import plotly.express as px  
 import json
+
 st.set_page_config(page_title="Gestão de Rotas", page_icon="🗺️", layout="wide")
 
 # ==========================================
@@ -65,16 +66,18 @@ COL_CONCLUSAO = "Conclusão"
 # ==========================================
 # FUNÇÕES DE DADOS
 # ==========================================
-import json
-
 def obter_conexao():
-    # Lê as credenciais de forma segura direto do Cofre do Streamlit
-    credenciais = json.loads(st.secrets["google_credentials"])
-    
-    # CORREÇÃO MÁGICA: Conserta as quebras de linha da chave privada que o Streamlit bagunça
-    credenciais["private_key"] = credenciais["private_key"].replace("\\n", "\n")
-    
-    return gspread.service_account_from_dict(credenciais)
+    try:
+        # Lê as credenciais de forma segura direto do Cofre do Streamlit
+        credenciais = json.loads(st.secrets["google_credentials"])
+        # CORREÇÃO MÁGICA: Conserta as quebras de linha da chave privada que o Streamlit bagunça
+        if "\\n" in credenciais["private_key"]:
+            credenciais["private_key"] = credenciais["private_key"].replace("\\n", "\n")
+        return gspread.service_account_from_dict(credenciais)
+    except Exception as e:
+        st.error(f"Erro ao conectar com o Google: {e}")
+        st.stop()
+
 def extrair_bairro_inteligente(row):
     bairro_form = str(row.get(COL_BAIRRO, "")).strip()
     if bairro_form and bairro_form.lower() not in ['nan', 'none', '']: return bairro_form.upper()
@@ -175,7 +178,7 @@ def carregar_dados():
                 linha = int(row['Linha_Planilha'])
                 if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
                 if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
-                # Deixa a conclusão em branco em vez de escrever texto
+                # Deixa a conclusão em branco (Silencioso)
                 if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
                 
                 df_respostas.at[idx, 'Operador Atribuído'] = "-"

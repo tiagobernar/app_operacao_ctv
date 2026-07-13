@@ -92,14 +92,13 @@ COL_CIDADE = "Informe cidade do Serviço"
 COL_BAIRRO = "Informe o BAIRRO de Campina Grande"
 COL_SERVICO = "Qual o Serviço ?"
 COL_CONCLUSAO = "Conclusão"
+COL_DATA = "Carimbo de data/hora"
 
 def obter_conexao():
     try:
-        # Lê o segredo. Se for texto, converte de JSON. Se já for dicionário, usa direto.
         segredo = st.secrets["google_credentials"]
         credenciais = json.loads(segredo) if isinstance(segredo, str) else dict(segredo)
         
-        # Correção bruta da Chave Privada (Garante que o Google aceite a assinatura)
         chave_privada = credenciais.get("private_key", "")
         chave_privada = chave_privada.replace("\\n", "\n").strip('"').strip("'")
         credenciais["private_key"] = chave_privada
@@ -216,7 +215,6 @@ def carregar_tarefas(operador):
                 linha = int(row['Linha_Planilha'])
                 if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
                 if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
-                # Deixa a conclusão em branco silenciosamente
                 if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
                 
                 df_respostas.at[idx, 'Operador Atribuído'] = ""
@@ -246,7 +244,7 @@ def carregar_tarefas(operador):
         except Exception:
             pass 
                 
-        mask_validas = df_respostas[COL_MATRICULA] != 'ROTEIRO_SISTEMA' # Filtro mantido por segurança
+        mask_validas = df_respostas[COL_MATRICULA] != 'ROTEIRO_SISTEMA' 
         df_respostas = df_respostas[mask_validas].reset_index(drop=True)
         df_formulas = df_formulas[mask_validas].reset_index(drop=True)
         
@@ -296,7 +294,11 @@ def carregar_tarefas(operador):
         is_hoje = df_respostas["Data Programada"].astype(str).str.strip() == data_hoje
         is_pendente = df_respostas["Status_Temp"].isin(["PENDENTE", "EM ANDAMENTO"])
         
-        df_tarefas = df_respostas[is_operador & (is_hoje | is_pendente)].copy()
+        # NOVA REGRA: Verifica se a ordem foi executada ou devolvida na data de hoje
+        is_modificada_hoje = df_respostas[COL_DATA].astype(str).str.contains(data_hoje, na=False)
+        
+        # A ordem fica na tela se: for de hoje, OU estiver pendente, OU tiver sido alterada hoje
+        df_tarefas = df_respostas[is_operador & (is_hoje | is_pendente | is_modificada_hoje)].copy()
         
         if df_tarefas.empty: return pd.DataFrame(), roteiro_iniciado, roteiro_finalizado
             
@@ -395,11 +397,9 @@ def registrar_evento_roteiro(operador, evento):
     client = obter_conexao()
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
     
-    # Tenta abrir a aba de status, se não existir, cria automaticamente
     try:
         aba_status = planilha.worksheet("STATUS_OPERADORES")
     except gspread.exceptions.WorksheetNotFound:
-        # CORREÇÃO AQUI: Números sem aspas (rows=1000, cols=4)
         aba_status = planilha.add_worksheet(title="STATUS_OPERADORES", rows=1000, cols=4)
         aba_status.append_row(["Data/Hora", "Operador", "Evento", "Data Referencia"])
 
@@ -430,7 +430,6 @@ def finalizar_roteiro_sem_poluir(df_pendentes):
     celulas = []
     for _, row in df_pendentes.iterrows():
         linha = int(row['Linha_Planilha'])
-        # Limpa silenciosamente a conclusão, o operador e a data, devolvendo para a base limpinha
         if col_idx_conc: celulas.append(gspread.Cell(row=linha, col=col_idx_conc, value=""))
         if col_idx_op: celulas.append(gspread.Cell(row=linha, col=col_idx_op, value="-"))
         if col_idx_dt: celulas.append(gspread.Cell(row=linha, col=col_idx_dt, value="-"))

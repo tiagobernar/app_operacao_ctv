@@ -143,8 +143,57 @@ def carregar_dados():
         df_respostas['Operador Atribuído'] = df_respostas['Operador Atribuído'].replace('-', '')
         df_respostas['Data Programada'] = df_respostas['Data Programada'].replace('-', '')
 
-        df_eventos = df_respostas[df_respostas[COL_MATRICULA] == 'ROTEIRO_SISTEMA'].copy()
-        df_respostas = df_respostas[df_respostas[COL_MATRICULA] != "ROTEIRO_SISTEMA"]
+        # =========================================================================
+        # INÍCIO DO "GUARDIÃO DA MEIA-NOITE": LIMPEZA AUTOMÁTICA DE ORDENS VENCIDAS
+        # =========================================================================
+        df_respostas['Data_Prog_Date'] = pd.to_datetime(df_respostas['Data Programada'], format='%d/%m/%Y', errors='coerce')
+        hoje_date = pd.Timestamp(datetime.now().date())
+        
+        is_pendente = ~df_respostas[COL_CONCLUSAO].str.contains("EXECUTAD|DEVOLVID", na=False)
+        is_anterior = df_respostas['Data_Prog_Date'] < hoje_date
+        has_operador = (df_respostas['Operador Atribuído'] != "") & (df_respostas['Operador Atribuído'] != "-")
+        
+        vencidas = df_respostas[is_pendente & is_anterior & has_operador]
+        
+        if not vencidas.empty:
+            header_upper = [str(h).strip().upper() for h in aba_respostas.row_values(1)]
+            col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else None
+            col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
+            col_conc = None
+            if "CONCLUSÃO" in header_upper: col_conc = header_upper.index("CONCLUSÃO") + 1
+            elif "CONCLUSAO" in header_upper: col_conc = header_upper.index("CONCLUSAO") + 1
+            
+            celulas = []
+            for idx, row in vencidas.iterrows():
+                linha = int(row['Linha_Planilha'])
+                if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
+                if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
+                # Deixa a conclusão em branco em vez de escrever texto
+                if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
+                
+                df_respostas.at[idx, 'Operador Atribuído'] = "-"
+                df_respostas.at[idx, 'Data Programada'] = "-"
+                df_respostas.at[idx, COL_CONCLUSAO] = ""
+                
+            if celulas:
+                aba_respostas.update_cells(celulas)
+        # =========================================================================
+        
+        # Lê os eventos da nova aba separada para o Dashboard
+        try:
+            aba_status = client.open("Cópia de Controle Calçadas e Paredes TESTE").worksheet("STATUS_OPERADORES")
+            df_eventos = pd.DataFrame(aba_status.get_all_records())
+            # Renomeamos as colunas em memória para não quebrar o layout
+            if not df_eventos.empty:
+                df_eventos = df_eventos.rename(columns={
+                    "Operador": "Operador Atribuído", 
+                    "Evento": "Conclusão", 
+                    "Data Referencia": "Data Programada"
+                })
+        except:
+            df_eventos = pd.DataFrame(columns=["Operador Atribuído", "Conclusão", "Data Programada"])
+
+        df_respostas = df_respostas[df_respostas[COL_MATRICULA] != "ROTEIRO_SISTEMA"] # Limpeza por segurança de registros antigos
         df_respostas = df_respostas[df_respostas[COL_MATRICULA] != ""]
         
         df_respostas = df_respostas.drop_duplicates(subset=[COL_MATRICULA], keep='last')
@@ -201,24 +250,28 @@ def mover_para_pasta(df_alvo, nome_operador, data_programada=""):
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
     aba = planilha.worksheet("Respostas ao formulário 1")
     header = [str(h).strip() for h in aba.row_values(1)]
+    header_upper = [h.upper() for h in header]
     
-    if "Operador Atribuído" not in header:
+    if "OPERADOR ATRIBUÍDO" not in header_upper:
         col_idx_op = len(header) + 1
         aba.update_cell(1, col_idx_op, "Operador Atribuído")
         header.append("Operador Atribuído")
-    else: col_idx_op = header.index("Operador Atribuído") + 1
+        header_upper.append("OPERADOR ATRIBUÍDO")
+    else: col_idx_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1
     
-    if "Data Programada" not in header:
+    if "DATA PROGRAMADA" not in header_upper:
         col_idx_data = len(header) + 1
         aba.update_cell(1, col_idx_data, "Data Programada")
         header.append("Data Programada")
-    else: col_idx_data = header.index("Data Programada") + 1
+        header_upper.append("DATA PROGRAMADA")
+    else: col_idx_data = header_upper.index("DATA PROGRAMADA") + 1
     
-    if "Conclusão" not in header:
-        col_idx_conc = len(header) + 1
-        aba.update_cell(1, col_idx_conc, "Conclusão")
-        header.append("Conclusão")
-    else: col_idx_conc = header.index("Conclusão") + 1
+    if "CONCLUSÃO" in header_upper:
+        col_idx_conc = header_upper.index("CONCLUSÃO") + 1
+    elif "CONCLUSAO" in header_upper:
+        col_idx_conc = header_upper.index("CONCLUSAO") + 1
+    else:
+        col_idx_conc = None
     
     val_op = nome_operador if nome_operador != "" else "-"
     val_dt = data_programada if data_programada != "" else "-"
@@ -227,7 +280,8 @@ def mover_para_pasta(df_alvo, nome_operador, data_programada=""):
     for linha in df_alvo['Linha_Planilha']:
         celulas.append(gspread.Cell(row=int(linha), col=col_idx_op, value=val_op))
         celulas.append(gspread.Cell(row=int(linha), col=col_idx_data, value=val_dt))
-        celulas.append(gspread.Cell(row=int(linha), col=col_idx_conc, value="")) 
+        if col_idx_conc:
+            celulas.append(gspread.Cell(row=int(linha), col=col_idx_conc, value="")) 
     if celulas: aba.update_cells(celulas)
     st.cache_data.clear() 
 
@@ -475,7 +529,7 @@ if st.session_state.admin_logado:
                                         st.success("Ordens retiradas desta pasta e devolvidas para a Caixa de Entrada!")
                                         time.sleep(2)
                                         st.rerun()
-                                    
+                            
                             st.map(df_pasta[['lat', 'lon']].dropna())
                         else:
                             st.info("Nenhuma ordem na pasta neste momento. O operador já finalizou ou teve as ordens remanejadas.")
@@ -494,13 +548,10 @@ if st.session_state.admin_logado:
             col_f1, col_f2 = st.columns(2)
             
             with col_f1:
-                # =========================================================
-                # NOVO MENU DE DATAS 100% EM PORTUGUÊS (Rápido e Inteligente)
-                # =========================================================
                 filtro_tempo = st.selectbox(
                     "📅 Filtro Rápido de Tempo:",
                     ["Todo o Período", "Hoje", "Última Semana", "Últimos 15 Dias", "Último Mês", "Calendário Personalizado..."],
-                    index=1, # Já abre por padrão no "Hoje"!
+                    index=1, 
                     key="dash_filtro_tempo"
                 )
                 
@@ -518,7 +569,6 @@ if st.session_state.admin_logado:
                 elif filtro_tempo == "Último Mês":
                     data_ini, data_fim = hoje - pd.Timedelta(days=30), hoje
                 elif filtro_tempo == "Calendário Personalizado...":
-                    # Se ele quiser quebrar a cabeça, ele escolhe essa opção e o calendário aparece!
                     datas_selecionadas = st.date_input(
                         "Selecione o Período (Data Inicial e Final):",
                         value=(hoje, hoje),
@@ -536,9 +586,10 @@ if st.session_state.admin_logado:
                 todas_cidades = sorted([str(c).strip() for c in df_dash[COL_CIDADE].unique() if str(c).strip() != ""])
                 cidade_dash = st.selectbox("🏙️ Cidade:", ["Todas as Cidades"] + todas_cidades, key="dash_cidade")
             
-            # Aplicando filtros de data se não for "Todo o Período"
             if data_ini is not None and data_fim is not None:
-                df_dash = df_dash[(df_dash['Data_Obj'].dt.date >= data_ini) & (df_dash['Data_Obj'].dt.date <= data_fim)]
+                data_ini_ts = pd.Timestamp(data_ini)
+                data_fim_ts = pd.Timestamp(data_fim)
+                df_dash = df_dash[(df_dash['Data_Obj'] >= data_ini_ts) & (df_dash['Data_Obj'] <= data_fim_ts)]
                     
             if cidade_dash != "Todas as Cidades":
                 df_dash = df_dash[df_dash[COL_CIDADE] == cidade_dash]

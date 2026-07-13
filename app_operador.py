@@ -10,7 +10,6 @@ import re
 import unicodedata
 import json
 from streamlit_cookies_manager import EncryptedCookieManager
-
 st.set_page_config(page_title="OPERAÇÃO CTV", page_icon="📱", layout="centered")
 
 # ==========================================
@@ -93,8 +92,12 @@ COL_BAIRRO = "Informe o BAIRRO de Campina Grande"
 COL_SERVICO = "Qual o Serviço ?"
 COL_CONCLUSAO = "Conclusão"
 
+import json
+
 def obter_conexao():
-    return gspread.service_account(filename="credenciais.json")
+    # Lê as credenciais de forma segura direto do Cofre do Streamlit
+    credenciais = json.loads(st.secrets["google_credentials"])
+    return gspread.service_account_from_dict(credenciais)
 
 def fazer_upload_foto(foto_bytes):
     try:

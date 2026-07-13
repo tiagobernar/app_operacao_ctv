@@ -8,7 +8,7 @@ from datetime import datetime
 import time
 from streamlit_cookies_manager import EncryptedCookieManager
 import plotly.express as px  
-
+import json
 st.set_page_config(page_title="Gestão de Rotas", page_icon="🗺️", layout="wide")
 
 # ==========================================
@@ -65,8 +65,12 @@ COL_CONCLUSAO = "Conclusão"
 # ==========================================
 # FUNÇÕES DE DADOS
 # ==========================================
+import json
+
 def obter_conexao():
-    return gspread.service_account(filename="credenciais.json")
+    # Lê as credenciais de forma segura direto do Cofre do Streamlit
+    credenciais = json.loads(st.secrets["google_credentials"])
+    return gspread.service_account_from_dict(credenciais)
 
 def extrair_bairro_inteligente(row):
     bairro_form = str(row.get(COL_BAIRRO, "")).strip()

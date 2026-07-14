@@ -98,11 +98,9 @@ def obter_conexao():
     try:
         segredo = st.secrets["google_credentials"]
         credenciais = json.loads(segredo) if isinstance(segredo, str) else dict(segredo)
-        
         chave_privada = credenciais.get("private_key", "")
         chave_privada = chave_privada.replace("\\n", "\n").strip('"').strip("'")
         credenciais["private_key"] = chave_privada
-        
         return gspread.service_account_from_dict(credenciais)
     except Exception as e:
         st.error(f"Erro ao conectar com o Google: {e}")
@@ -182,13 +180,13 @@ def carregar_tarefas(operador):
         df_respostas['OS'] = "OS-" + (df_respostas.index + 2).astype(str)
         df_respostas[COL_MATRICULA] = df_respostas[COL_MATRICULA].astype(str).apply(lambda x: x.split('.')[0]).str.strip()
         
-        # PROPAGANDO INFORMAÇÃO PELA PLANILHA ANTES DE FILTRAR
         df_respostas['Operador Atribuído'] = df_respostas.groupby(COL_MATRICULA)['Operador Atribuído'].ffill().fillna("")
         df_respostas['Data Programada'] = df_respostas.groupby(COL_MATRICULA)['Data Programada'].ffill().fillna("")
         df_respostas['Operador Atribuído'] = df_respostas['Operador Atribuído'].replace('-', '')
         df_respostas['Data Programada'] = df_respostas['Data Programada'].replace('-', '')
 
         data_hoje = datetime.now().strftime("%d/%m/%Y")
+        data_hoje_iso = datetime.now().strftime("%Y-%m-%d")
         
         # =========================================================================
         # INÍCIO DO "GUARDIÃO DA MEIA-NOITE" (App do Operador)
@@ -224,7 +222,6 @@ def carregar_tarefas(operador):
                 aba_respostas.update_cells(celulas)
         # =========================================================================
 
-        # LENDO O STATUS DA NOVA ABA SEPARADA
         roteiro_iniciado = False
         roteiro_finalizado = False
         
@@ -284,20 +281,16 @@ def carregar_tarefas(operador):
             urls_extraidas.append(url_found)
             
         df_respostas['Fotos_Processadas'] = urls_extraidas
-        
         df_respostas = df_respostas[df_respostas[COL_MATRICULA] != ""]
         df_respostas = df_respostas.drop_duplicates(subset=[COL_MATRICULA], keep='last')
-
         df_respostas['Status_Temp'] = df_respostas.apply(lambda row: definir_status(row)[0], axis=1)
         
+        # FILTRO PRINCIPAL BLINDADO
         is_operador = df_respostas["Operador Atribuído"].astype(str).str.strip() == operador.strip()
-        is_hoje = df_respostas["Data Programada"].astype(str).str.strip() == data_hoje
+        is_hoje = df_respostas["Data Programada"].astype(str).str.strip().isin([data_hoje, data_hoje_iso])
         is_pendente = df_respostas["Status_Temp"].isin(["PENDENTE", "EM ANDAMENTO"])
+        is_modificada_hoje = df_respostas[COL_DATA].astype(str).str.contains(f"{data_hoje}|{data_hoje_iso}", regex=True, na=False)
         
-        # NOVA REGRA: Verifica se a ordem foi executada ou devolvida na data de hoje
-        is_modificada_hoje = df_respostas[COL_DATA].astype(str).str.contains(data_hoje, na=False)
-        
-        # A ordem fica na tela se: for de hoje, OU estiver pendente, OU tiver sido alterada hoje
         df_tarefas = df_respostas[is_operador & (is_hoje | is_pendente | is_modificada_hoje)].copy()
         
         if df_tarefas.empty: return pd.DataFrame(), roteiro_iniciado, roteiro_finalizado
@@ -319,18 +312,6 @@ def limpar_coordenadas(valor, tipo):
         elif tipo == 'lon': return sinal * float(nums[:2] + "." + nums[2:])
     except: return None
 
-def salvar_linha_segura(aba, nova_linha):
-    coluna_a = aba.col_values(1)
-    proxima_linha = len(coluna_a) + 1
-    intervalo = f"A{proxima_linha}:J{proxima_linha}"
-    try:
-        try: aba.update(range_name=intervalo, values=[nova_linha], value_input_option='USER_ENTERED')
-        except TypeError: aba.update(intervalo, [nova_linha], value_input_option='USER_ENTERED')
-    except Exception:
-        aba.add_rows(10)
-        try: aba.update(range_name=intervalo, values=[nova_linha], value_input_option='USER_ENTERED')
-        except TypeError: aba.update(intervalo, [nova_linha], value_input_option='USER_ENTERED')
-
 def atualizar_status_linha(linha_planilha, novo_status):
     try:
         client = obter_conexao()
@@ -351,8 +332,14 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3)
     client = obter_conexao()
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
     aba = planilha.worksheet("Respostas ao formulário 1")
+    
+    header = [str(h).strip() for h in aba.row_values(1)]
+    header_upper = [h.upper() for h in header]
+    
     agora = datetime.now()
     data_formatada = agora.strftime("%d/%m/%Y %H:%M:%S")
+    data_hoje_str = agora.strftime("%d/%m/%Y")
+    
     link1 = fazer_upload_foto(f1) if f1 else ""
     if link1 == "FALHA_NO_UPLOAD": return False
     link2 = fazer_upload_foto(f2) if f2 else ""
@@ -360,8 +347,17 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3)
     link3 = fazer_upload_foto(f3) if f3 else ""
     if link3 == "FALHA_NO_UPLOAD": return False
     
-    nova_linha = [data_formatada, matricula, servico, "Executado ( Eu fiz o serviço )", operador, link1, link2, link3, cidade, bairro]
-    salvar_linha_segura(aba, nova_linha)
+    linha_base = [data_formatada, matricula, servico, "Executado ( Eu fiz o serviço )", operador, link1, link2, link3, cidade, bairro]
+    
+    nova_linha = ["" for _ in range(max(len(header), len(linha_base)))]
+    for i in range(len(linha_base)): 
+        nova_linha[i] = linha_base[i]
+    
+    # Injetando operador e data ativamente nas colunas certas para não sumirem
+    if "OPERADOR ATRIBUÍDO" in header_upper: nova_linha[header_upper.index("OPERADOR ATRIBUÍDO")] = operador
+    if "DATA PROGRAMADA" in header_upper: nova_linha[header_upper.index("DATA PROGRAMADA")] = data_hoje_str
+        
+    aba.append_row(nova_linha, value_input_option='USER_ENTERED')
     st.cache_data.clear()
     return True
 
@@ -370,16 +366,30 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
     aba = planilha.worksheet("Respostas ao formulário 1")
     
+    header = [str(h).strip() for h in aba.row_values(1)]
+    header_upper = [h.upper() for h in header]
+    
     agora = datetime.now()
     data_formatada = agora.strftime("%d/%m/%Y %H:%M:%S")
+    data_hoje_str = agora.strftime("%d/%m/%Y")
+    
     link_foto = fazer_upload_foto(foto_bytes) if foto_bytes else ""
     if link_foto == "FALHA_NO_UPLOAD": return False
     conclusao_devolucao = f"DEVOLVIDO: {motivo}"
     
-    nova_linha = [data_formatada, matricula, servico, conclusao_devolucao, operador, link_foto, "", "", cidade, bairro]
-    salvar_linha_segura(aba, nova_linha)
+    linha_base = [data_formatada, matricula, servico, conclusao_devolucao, operador, link_foto, "", "", cidade, bairro]
     
-    header_upper = [str(h).strip().upper() for h in aba.row_values(1)]
+    nova_linha = ["" for _ in range(max(len(header), len(linha_base)))]
+    for i in range(len(linha_base)): 
+        nova_linha[i] = linha_base[i]
+    
+    # Injetando operador e data ativamente na linha nova!
+    if "OPERADOR ATRIBUÍDO" in header_upper: nova_linha[header_upper.index("OPERADOR ATRIBUÍDO")] = operador
+    if "DATA PROGRAMADA" in header_upper: nova_linha[header_upper.index("DATA PROGRAMADA")] = data_hoje_str
+        
+    aba.append_row(nova_linha, value_input_option='USER_ENTERED')
+    
+    # Desvincula do original para voltar para a base
     col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else None
     col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
     
@@ -387,8 +397,7 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     if col_op: celulas.append(gspread.Cell(row=int(linha_planilha), col=col_op, value="-"))
     if col_dt: celulas.append(gspread.Cell(row=int(linha_planilha), col=col_dt, value="-"))
     
-    if celulas:
-        aba.update_cells(celulas)
+    if celulas: aba.update_cells(celulas)
         
     st.cache_data.clear() 
     return True

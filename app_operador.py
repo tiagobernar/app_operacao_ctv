@@ -165,7 +165,7 @@ def carregar_tarefas(operador):
         raw_values = aba_respostas.get_all_values()
         if not raw_values: return pd.DataFrame(), False, False
         
-        # BLINDAGEM CONTRA COLUNAS DUPLICADAS ("cannot reindex on an axis with duplicate labels")
+        # BLINDAGEM CONTRA COLUNAS DUPLICADAS NA PLANILHA DO GOOGLE
         headers = [str(h).strip() for h in raw_values[0]]
         seen = {}
         safe_headers = []
@@ -182,22 +182,7 @@ def carregar_tarefas(operador):
         
         df_formulas = pd.DataFrame(aba_respostas.get_all_values(value_render_option='FORMULA')[1:], columns=safe_headers)
         
-        # Mapeamento seguro da coluna de Operador/Equipe
-        col_alvo = "Operador Atribuído"
-        coluna_equipe = None
-        for c in df_respostas.columns:
-            if c.upper() in ["EQUIPE", "OPERADOR ATRIBUIDO", "OPERADOR ATRIBUÍDO"]:
-                coluna_equipe = c
-                break
-                
-        if coluna_equipe and coluna_equipe != col_alvo:
-            # Se já existir uma coluna 'Operador Atribuído' escondida/em branco, removemos para não duplicar
-            if col_alvo in df_respostas.columns:
-                df_respostas.drop(columns=[col_alvo], inplace=True)
-            df_respostas.rename(columns={coluna_equipe: col_alvo}, inplace=True)
-        elif not coluna_equipe and col_alvo not in df_respostas.columns:
-            df_respostas[col_alvo] = ""
-
+        if "Operador Atribuído" not in df_respostas.columns: df_respostas["Operador Atribuído"] = ""
         if "Data Programada" not in df_respostas.columns: df_respostas["Data Programada"] = ""
         if "Fotos" not in df_respostas.columns: df_respostas["Fotos"] = ""
             
@@ -227,9 +212,8 @@ def carregar_tarefas(operador):
         if not vencidas.empty:
             header_upper = [str(h).strip().upper() for h in aba_respostas.row_values(1)]
             
-            idx_op = next((i for i, h in enumerate(header_upper) if h in ["EQUIPE", "OPERADOR ATRIBUÍDO", "OPERADOR ATRIBUIDO"]), -1)
-            col_op = idx_op + 1 if idx_op >= 0 else None
-            
+            # Limpa Atribuição de Roteiro pendente do passado
+            col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else (header_upper.index("OPERADOR ATRIBUIDO") + 1 if "OPERADOR ATRIBUIDO" in header_upper else None)
             col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
             col_conc = header_upper.index("CONCLUSÃO") + 1 if "CONCLUSÃO" in header_upper else (header_upper.index("CONCLUSAO") + 1 if "CONCLUSAO" in header_upper else None)
             
@@ -369,7 +353,9 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3,
     idx_matricula = get_idx(["INFORME A MATRÍCULA DO IMÓVEL", "MATRICULA", "MATRÍCULA"])
     idx_servico = get_idx(["QUAL O SERVIÇO ?", "SERVICO", "SERVIÇO"])
     idx_conclusao = get_idx(["CONCLUSÃO", "CONCLUSAO"])
-    idx_equipe = get_idx(["EQUIPE", "OPERADOR ATRIBUÍDO", "OPERADOR ATRIBUIDO"])
+    idx_equipe = get_idx(["EQUIPE"])
+    idx_operador_atrib = get_idx(["OPERADOR ATRIBUÍDO", "OPERADOR ATRIBUIDO"])
+    idx_data_prog = get_idx(["DATA PROGRAMADA"])
     idx_foto1 = get_idx(["FOTOS", "FOTO 1", "FOTO"])
     idx_foto2 = get_idx(["MAIS FOTOS ?", "FOTO 2"])
     idx_foto3 = get_idx(["MAIS FOTOS AINDA ?", "FOTO 3"])
@@ -378,6 +364,7 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3,
 
     agora = datetime.now()
     data_formatada = agora.strftime("%d/%m/%Y %H:%M:%S")
+    data_hoje_str = agora.strftime("%d/%m/%Y")
     
     link1 = fazer_upload_foto(f1) if f1 else ""
     if link1 == "FALHA_NO_UPLOAD": return False
@@ -394,6 +381,8 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3,
     if idx_servico >= 0: nova_linha[idx_servico] = servico
     if idx_conclusao >= 0: nova_linha[idx_conclusao] = status_final
     if idx_equipe >= 0: nova_linha[idx_equipe] = operador
+    if idx_operador_atrib >= 0: nova_linha[idx_operador_atrib] = operador
+    if idx_data_prog >= 0: nova_linha[idx_data_prog] = data_hoje_str
     if idx_foto1 >= 0: nova_linha[idx_foto1] = link1
     if idx_foto2 >= 0: nova_linha[idx_foto2] = link2
     if idx_foto3 >= 0: nova_linha[idx_foto3] = link3
@@ -409,11 +398,13 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3,
     for i, val in enumerate(nova_linha[:len(header)]):
         celulas_update.append(gspread.Cell(row=next_row, col=i+1, value=val))
         
-    # MATA O GHOST STATE E CORRIGE O OPERADOR NA LINHA ORIGINAL (Ex: Hermes -> Alberth)
+    # MATA O GHOST STATE E ATRIBUI A AUTORIA REAL AO OPERADOR (Sobrescrevendo o Hermes, etc.)
     if idx_conclusao >= 0:
         celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_conclusao + 1, value=status_final))
     if idx_equipe >= 0:
         celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_equipe + 1, value=operador))
+    if idx_operador_atrib >= 0:
+        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_operador_atrib + 1, value=operador))
         
     if celulas_update:
         aba.update_cells(celulas_update, value_input_option='USER_ENTERED')
@@ -438,13 +429,16 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     idx_matricula = get_idx(["INFORME A MATRÍCULA DO IMÓVEL", "MATRICULA", "MATRÍCULA"])
     idx_servico = get_idx(["QUAL O SERVIÇO ?", "SERVICO", "SERVIÇO"])
     idx_conclusao = get_idx(["CONCLUSÃO", "CONCLUSAO"])
-    idx_equipe = get_idx(["EQUIPE", "OPERADOR ATRIBUÍDO", "OPERADOR ATRIBUIDO"])
+    idx_equipe = get_idx(["EQUIPE"])
+    idx_operador_atrib = get_idx(["OPERADOR ATRIBUÍDO", "OPERADOR ATRIBUIDO"])
+    idx_data_prog = get_idx(["DATA PROGRAMADA"])
     idx_foto1 = get_idx(["FOTOS", "FOTO 1", "FOTO"])
     idx_cidade = get_idx(["INFORME CIDADE DO SERVIÇO", "CIDADE"])
     idx_bairro = get_idx(["INFORME O BAIRRO DE CAMPINA GRANDE", "BAIRRO"])
 
     agora = datetime.now()
     data_formatada = agora.strftime("%d/%m/%Y %H:%M:%S")
+    data_hoje_str = agora.strftime("%d/%m/%Y")
     
     link_foto = fazer_upload_foto(foto_bytes) if foto_bytes else ""
     if link_foto == "FALHA_NO_UPLOAD": return False
@@ -456,6 +450,8 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     if idx_servico >= 0: nova_linha[idx_servico] = servico
     if idx_conclusao >= 0: nova_linha[idx_conclusao] = conclusao_devolucao
     if idx_equipe >= 0: nova_linha[idx_equipe] = operador
+    if idx_operador_atrib >= 0: nova_linha[idx_operador_atrib] = operador
+    if idx_data_prog >= 0: nova_linha[idx_data_prog] = data_hoje_str
     if idx_foto1 >= 0: nova_linha[idx_foto1] = link_foto
     if idx_cidade >= 0: nova_linha[idx_cidade] = cidade
     if idx_bairro >= 0: nova_linha[idx_bairro] = bairro
@@ -469,11 +465,13 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     for i, val in enumerate(nova_linha[:len(header)]):
         celulas_update.append(gspread.Cell(row=next_row, col=i+1, value=val))
         
-    # ATUALIZA A LINHA ORIGINAL PARA DEVOLVIDA (E MANTÉM O OPERADOR PARA NÃO SUMIR DO APP)
+    # ATUALIZA A LINHA ORIGINAL PARA DEVOLVIDA E ATRIBUI A AUTORIA
     if idx_conclusao >= 0:
         celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_conclusao + 1, value=conclusao_devolucao))
     if idx_equipe >= 0:
         celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_equipe + 1, value=operador))
+    if idx_operador_atrib >= 0:
+        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_operador_atrib + 1, value=operador))
 
     if celulas_update: 
         aba.update_cells(celulas_update, value_input_option='USER_ENTERED')
@@ -510,8 +508,7 @@ def finalizar_roteiro_sem_poluir(df_pendentes):
     
     col_idx_conc = header_upper.index("CONCLUSÃO") + 1 if "CONCLUSÃO" in header_upper else (header_upper.index("CONCLUSAO") + 1 if "CONCLUSAO" in header_upper else None)
     
-    idx_op = next((i for i, h in enumerate(header_upper) if h in ["EQUIPE", "OPERADOR ATRIBUÍDO", "OPERADOR ATRIBUIDO"]), -1)
-    col_idx_op = idx_op + 1 if idx_op >= 0 else None
+    col_idx_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else (header_upper.index("OPERADOR ATRIBUIDO") + 1 if "OPERADOR ATRIBUIDO" in header_upper else None)
     col_idx_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
     
     celulas = []

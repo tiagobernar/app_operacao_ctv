@@ -164,22 +164,40 @@ def carregar_tarefas(operador):
         
         raw_values = aba_respostas.get_all_values()
         if not raw_values: return pd.DataFrame(), False, False
-        headers = [str(h).strip() for h in raw_values[0]]
         
-        df_respostas = pd.DataFrame(raw_values[1:], columns=headers)
-        df_respostas = df_respostas.loc[:, ~df_respostas.columns.duplicated()]
+        # BLINDAGEM CONTRA COLUNAS DUPLICADAS ("cannot reindex on an axis with duplicate labels")
+        headers = [str(h).strip() for h in raw_values[0]]
+        seen = {}
+        safe_headers = []
+        for h in headers:
+            if h in seen:
+                seen[h] += 1
+                safe_headers.append(f"{h}_{seen[h]}")
+            else:
+                seen[h] = 0
+                safe_headers.append(h)
+        
+        df_respostas = pd.DataFrame(raw_values[1:], columns=safe_headers)
         df_respostas['Linha_Planilha'] = df_respostas.index + 2
         
-        df_formulas = pd.DataFrame(aba_respostas.get_all_values(value_render_option='FORMULA')[1:], columns=headers)
-        df_formulas = df_formulas.loc[:, ~df_formulas.columns.duplicated()]
+        df_formulas = pd.DataFrame(aba_respostas.get_all_values(value_render_option='FORMULA')[1:], columns=safe_headers)
         
-        # Padroniza a coluna Equipe para Operador Atribuído internamente
+        # Mapeamento seguro da coluna de Operador/Equipe
+        col_alvo = "Operador Atribuído"
+        coluna_equipe = None
         for c in df_respostas.columns:
             if c.upper() in ["EQUIPE", "OPERADOR ATRIBUIDO", "OPERADOR ATRIBUÍDO"]:
-                df_respostas.rename(columns={c: "Operador Atribuído"}, inplace=True)
+                coluna_equipe = c
                 break
+                
+        if coluna_equipe and coluna_equipe != col_alvo:
+            # Se já existir uma coluna 'Operador Atribuído' escondida/em branco, removemos para não duplicar
+            if col_alvo in df_respostas.columns:
+                df_respostas.drop(columns=[col_alvo], inplace=True)
+            df_respostas.rename(columns={coluna_equipe: col_alvo}, inplace=True)
+        elif not coluna_equipe and col_alvo not in df_respostas.columns:
+            df_respostas[col_alvo] = ""
 
-        if "Operador Atribuído" not in df_respostas.columns: df_respostas["Operador Atribuído"] = ""
         if "Data Programada" not in df_respostas.columns: df_respostas["Data Programada"] = ""
         if "Fotos" not in df_respostas.columns: df_respostas["Fotos"] = ""
             
@@ -268,7 +286,7 @@ def carregar_tarefas(operador):
                     m = re.search(r'(https?://[^\s,"]+)', val_n)
                     if m: url_found = m.group(1)
             if not url_found:
-                for col in headers:
+                for col in safe_headers:
                     if ('foto' in col.lower() or 'link' in col.lower()) and col != 'Fotos':
                         val_f_col = str(df_formulas.iloc[i].get(col, ''))
                         if 'HYPERLINK' in val_f_col.upper():

@@ -327,7 +327,7 @@ def atualizar_status_linha(linha_planilha, novo_status):
     except Exception:
         pass 
 
-def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3):
+def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3, linha_planilha):
     client = obter_conexao()
     planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
     aba = planilha.worksheet("Respostas ao formulário 1")
@@ -356,6 +356,15 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3)
     if "DATA PROGRAMADA" in header_upper: nova_linha[header_upper.index("DATA PROGRAMADA")] = data_hoje_str
         
     aba.append_row(nova_linha, value_input_option='USER_ENTERED')
+    
+    # MATAR O "GHOST STATE": Atualiza a linha original também!
+    col_conc = None
+    if "CONCLUSÃO" in header_upper: col_conc = header_upper.index("CONCLUSÃO") + 1
+    elif "CONCLUSAO" in header_upper: col_conc = header_upper.index("CONCLUSAO") + 1
+    
+    if col_conc:
+        aba.update_cell(int(linha_planilha), col_conc, "Executado ( Eu fiz o serviço )")
+        
     st.cache_data.clear()
     return True
 
@@ -388,10 +397,12 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     
     col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else None
     col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
+    col_conc = header_upper.index("CONCLUSÃO") + 1 if "CONCLUSÃO" in header_upper else (header_upper.index("CONCLUSAO") + 1 if "CONCLUSAO" in header_upper else None)
     
     celulas = []
     if col_op: celulas.append(gspread.Cell(row=int(linha_planilha), col=col_op, value="-"))
     if col_dt: celulas.append(gspread.Cell(row=int(linha_planilha), col=col_dt, value="-"))
+    if col_conc: celulas.append(gspread.Cell(row=int(linha_planilha), col=col_conc, value=conclusao_devolucao))
     
     if celulas: aba.update_cells(celulas)
         
@@ -648,6 +659,7 @@ if st.session_state.autenticado:
                             else:
                                 f_bytes = foto1.getvalue() if foto1 is not None else None
                                 with st.spinner("Devolvendo..."):
+                                    # Alterado aqui para passar a linha também
                                     sucesso = registrar_devolucao(matricula, servico, cidade_bairro, nome_bairro, texto_motivo, operador, f_bytes, linha_planilha)
                                     if sucesso:
                                         st.session_state.os_aberta = None
@@ -671,7 +683,8 @@ if st.session_state.autenticado:
                                 f2_bytes = foto2.getvalue() if foto2 is not None else None
                                 f3_bytes = foto3.getvalue() if foto3 is not None else None
                                 with st.spinner("Encerrando..."):
-                                    sucesso = registrar_execucao(matricula, servico, operador, cidade_bairro, nome_bairro, f1_bytes, f2_bytes, f3_bytes)
+                                    # Alterado aqui para passar a linha também
+                                    sucesso = registrar_execucao(matricula, servico, operador, cidade_bairro, nome_bairro, f1_bytes, f2_bytes, f3_bytes, linha_planilha)
                                     if sucesso:
                                         st.session_state.os_aberta = None
                                         if "status_forcado" in st.session_state: del st.session_state["status_forcado"]

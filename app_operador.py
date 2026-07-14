@@ -285,7 +285,6 @@ def carregar_tarefas(operador):
         df_respostas = df_respostas.drop_duplicates(subset=[COL_MATRICULA], keep='last')
         df_respostas['Status_Temp'] = df_respostas.apply(lambda row: definir_status(row)[0], axis=1)
         
-        # FILTRO PRINCIPAL BLINDADO
         is_operador = df_respostas["Operador Atribuído"].astype(str).str.strip() == operador.strip()
         is_hoje = df_respostas["Data Programada"].astype(str).str.strip().isin([data_hoje, data_hoje_iso])
         is_pendente = df_respostas["Status_Temp"].isin(["PENDENTE", "EM ANDAMENTO"])
@@ -353,7 +352,6 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3)
     for i in range(len(linha_base)): 
         nova_linha[i] = linha_base[i]
     
-    # Injetando operador e data ativamente nas colunas certas para não sumirem
     if "OPERADOR ATRIBUÍDO" in header_upper: nova_linha[header_upper.index("OPERADOR ATRIBUÍDO")] = operador
     if "DATA PROGRAMADA" in header_upper: nova_linha[header_upper.index("DATA PROGRAMADA")] = data_hoje_str
         
@@ -383,13 +381,11 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     for i in range(len(linha_base)): 
         nova_linha[i] = linha_base[i]
     
-    # Injetando operador e data ativamente na linha nova!
     if "OPERADOR ATRIBUÍDO" in header_upper: nova_linha[header_upper.index("OPERADOR ATRIBUÍDO")] = operador
     if "DATA PROGRAMADA" in header_upper: nova_linha[header_upper.index("DATA PROGRAMADA")] = data_hoje_str
         
     aba.append_row(nova_linha, value_input_option='USER_ENTERED')
     
-    # Desvincula do original para voltar para a base
     col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else None
     col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
     
@@ -560,6 +556,11 @@ if st.session_state.autenticado:
                 cidade_bairro = row[COL_CIDADE].title()
                 nome_bairro = row['Bairro_Exibicao'].title()
                 
+                # Busca de forma inteligente a coluna do hidrômetro
+                hidro_key = next((col for col in row.keys() if 'hidrometro' in str(col).lower() or 'hidrômetro' in str(col).lower()), 'Hidrometro')
+                hidrometro = str(row.get(hidro_key, 'Não Informado')).strip()
+                if not hidrometro or hidrometro.lower() in ['nan', 'none', '']: hidrometro = 'Não Informado'
+                
                 if st.button("⬅️ Voltar para a Lista", use_container_width=True):
                     with st.spinner("Voltando..."):
                         atualizar_status_linha(linha_planilha, "PENDENTE") # DEVOLVE O STATUS PARA PENDENTE NA PLANILHA
@@ -573,6 +574,9 @@ if st.session_state.autenticado:
                 st.info(f"**Endereço:** {endereco}")
                 st.warning(f"**Serviço:** {servico}")
                 st.code(f"Matrícula: {matricula}")
+                
+                # Banner de destaque para o Hidrômetro
+                st.markdown(f"<div style='background-color: #1e1e1e; border-left: 5px solid #FFD700; padding: 12px; border-radius: 4px; margin-bottom: 16px;'><span style='font-size: 14px; color: #bbb;'>💧 Hidrômetro:</span><br><span style='font-size: 22px; font-weight: 900; color: #FFD700;'>{hidrometro}</span></div>", unsafe_allow_html=True)
                 
                 st.write("---")
                 st.write("🖼️ **Foto do Serviço Anterior:**")
@@ -763,8 +767,14 @@ if st.session_state.autenticado:
                                 cor_badge = row['Cor_Status']
                                 linha_planilha = row['Linha_Planilha']
                                 
+                                # Coleta a foto se houver
                                 foto_url = str(row.get('Fotos_Processadas', '')).strip()
                                 raw_foto = str(row.get('Fotos', '')).strip()
+                                
+                                # Puxando o número do Hidrômetro da planilha de parâmetros para o Cartão!
+                                hidro_key = next((col for col in row.keys() if 'hidrometro' in str(col).lower() or 'hidrômetro' in str(col).lower()), 'Hidrometro')
+                                hidrometro = str(row.get(hidro_key, 'Não Informado')).strip()
+                                if not hidrometro or hidrometro.lower() in ['nan', 'none', '']: hidrometro = 'Não Informado'
                                 
                                 if foto_url and foto_url.startswith('http'):
                                     img_src_list = foto_url
@@ -780,6 +790,7 @@ if st.session_state.autenticado:
                                     <div style="border: 1px solid #555; border-radius: 8px; padding: 15px; margin-bottom: 15px; {bg_style} min-height: 180px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
                                         <div style="background-color: {cor_badge}; color: white; display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 12px;">{status}</div>
                                         <div style="font-size: 18px; font-weight: bold; color: white; text-shadow: 1px 1px 3px black;">Matrícula: {matricula}</div>
+                                        <div style="font-size: 20px; font-weight: 900; color: #FFD700; text-shadow: 2px 2px 4px black; margin-top: 4px; margin-bottom: 8px;">💧 Hidrômetro: {hidrometro}</div>
                                         <div style="font-size: 14px; margin-top: 8px; color: #eee; text-shadow: 1px 1px 3px black; width: 75%; line-height: 1.4;">{endereco}</div>
                                         <div style="font-size: 12px; color: #ccc; margin-top: 12px; text-shadow: 1px 1px 3px black;">Serviço</div>
                                         <div style="font-size: 14px; color: white; font-weight: bold; text-shadow: 1px 1px 3px black; margin-bottom: 15px;">{servico}</div>
@@ -799,6 +810,7 @@ if st.session_state.autenticado:
                                     <div style="border: 1px solid #444; border-radius: 8px; padding: 15px; margin-bottom: 15px; background-color: #1e1e1e;">
                                         <div style="background-color: {cor_badge}; color: white; display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-bottom: 12px;">{status}</div>
                                         <div style="font-size: 18px; font-weight: bold; color: white;">Matrícula: {matricula}</div>
+                                        <div style="font-size: 20px; font-weight: 900; color: #FFD700; margin-top: 4px; margin-bottom: 8px;">💧 Hidrômetro: {hidrometro}</div>
                                         <div style="font-size: 14px; margin-top: 8px; color: #ddd;">{endereco}</div>
                                         <div style="font-size: 12px; color: #aaa; margin-top: 12px;">Serviço</div>
                                         <div style="font-size: 14px; color: white; font-weight: 500; margin-bottom: 15px;">{servico}</div>

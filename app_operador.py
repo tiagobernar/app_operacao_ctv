@@ -104,7 +104,7 @@ def obter_conexao():
         return gspread.service_account_from_dict(credenciais)
     except Exception as e:
         st.error(f"Erro ao conectar com o Google: {e}")
-        raise e  # <-- CORREÇÃO APLICADA: Mostrar o erro na tela em vez de congelar
+        raise e 
 
 def fazer_upload_foto(foto_bytes):
     try:
@@ -215,14 +215,13 @@ def carregar_tarefas(operador):
             # Limpa Atribuição de Roteiro pendente do passado
             col_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else (header_upper.index("OPERADOR ATRIBUIDO") + 1 if "OPERADOR ATRIBUIDO" in header_upper else None)
             col_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
-            col_conc = header_upper.index("CONCLUSÃO") + 1 if "CONCLUSÃO" in header_upper else (header_upper.index("CONCLUSAO") + 1 if "CONCLUSAO" in header_upper else None)
             
             celulas = []
             for idx, row in vencidas.iterrows():
                 linha = int(row['Linha_Planilha'])
                 if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
                 if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
-                if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
+                # NÃO LIMPA A CONCLUSÃO
                 
                 df_respostas.at[idx, 'Operador Atribuído'] = ""
                 df_respostas.at[idx, 'Data Programada'] = ""
@@ -321,20 +320,10 @@ def limpar_coordenadas(valor, tipo):
     except: return None
 
 def atualizar_status_linha(linha_planilha, novo_status):
-    try:
-        client = obter_conexao()
-        planilha = client.open("Cópia de Controle Calçadas e Paredes TESTE")
-        aba = planilha.worksheet("Respostas ao formulário 1")
-        header = [str(h).strip().upper() for h in aba.row_values(1)]
-        
-        col_idx_conc = None
-        if "CONCLUSÃO" in header: col_idx_conc = header.index("CONCLUSÃO") + 1
-        elif "CONCLUSAO" in header: col_idx_conc = header.index("CONCLUSAO") + 1
-        
-        if col_idx_conc is not None:
-            aba.update_cell(int(linha_planilha), col_idx_conc, novo_status)
-    except Exception:
-        pass 
+    # FUNÇÃO DESATIVADA INTENCIONALMENTE
+    # Não vamos mais sobrescrever a resposta do solicitante com "EM ANDAMENTO" 
+    # Isso garante que a linha de origem permaneça intocada!
+    pass 
 
 def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3, linha_planilha):
     client = obter_conexao()
@@ -389,25 +378,9 @@ def registrar_execucao(matricula, servico, operador, cidade, bairro, f1, f2, f3,
     if idx_cidade >= 0: nova_linha[idx_cidade] = cidade
     if idx_bairro >= 0: nova_linha[idx_bairro] = bairro
     
-    # PEGAR A ÚLTIMA LINHA ABSOLUTA PARA NÃO SOBRESCREVER
-    todas_linhas = aba.get_all_values()
-    next_row = len(todas_linhas) + 1
-    
-    celulas_update = []
-    # Cria as células da nova linha no final da planilha
-    for i, val in enumerate(nova_linha[:len(header)]):
-        celulas_update.append(gspread.Cell(row=next_row, col=i+1, value=val))
-        
-    # MATA O GHOST STATE E ATRIBUI A AUTORIA REAL AO OPERADOR (Sobrescrevendo o Hermes, etc.)
-    if idx_conclusao >= 0:
-        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_conclusao + 1, value=status_final))
-    if idx_equipe >= 0:
-        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_equipe + 1, value=operador))
-    if idx_operador_atrib >= 0:
-        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_operador_atrib + 1, value=operador))
-        
-    if celulas_update:
-        aba.update_cells(celulas_update, value_input_option='USER_ENTERED')
+    # APENAS INSERE UMA NOVA LINHA NO FINAL DA PLANILHA
+    # A linha do solicitante (linha_planilha) fica intocada na base de dados!
+    aba.append_row(nova_linha[:len(header)], value_input_option='USER_ENTERED')
         
     st.cache_data.clear()
     return True
@@ -456,25 +429,9 @@ def registrar_devolucao(matricula, servico, cidade, bairro, motivo, operador, fo
     if idx_cidade >= 0: nova_linha[idx_cidade] = cidade
     if idx_bairro >= 0: nova_linha[idx_bairro] = bairro
 
-    # PEGAR A ÚLTIMA LINHA ABSOLUTA PARA NÃO SOBRESCREVER
-    todas_linhas = aba.get_all_values()
-    next_row = len(todas_linhas) + 1
-    
-    celulas_update = []
-    # Cria as células da nova linha de devolução no final da planilha
-    for i, val in enumerate(nova_linha[:len(header)]):
-        celulas_update.append(gspread.Cell(row=next_row, col=i+1, value=val))
-        
-    # ATUALIZA A LINHA ORIGINAL PARA DEVOLVIDA E ATRIBUI A AUTORIA
-    if idx_conclusao >= 0:
-        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_conclusao + 1, value=conclusao_devolucao))
-    if idx_equipe >= 0:
-        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_equipe + 1, value=operador))
-    if idx_operador_atrib >= 0:
-        celulas_update.append(gspread.Cell(row=int(linha_planilha), col=idx_operador_atrib + 1, value=operador))
-
-    if celulas_update: 
-        aba.update_cells(celulas_update, value_input_option='USER_ENTERED')
+    # APENAS INSERE UMA NOVA LINHA NO FINAL DA PLANILHA
+    # A linha do solicitante (linha_planilha) fica intocada na base de dados!
+    aba.append_row(nova_linha[:len(header)], value_input_option='USER_ENTERED')
         
     st.cache_data.clear() 
     return True
@@ -506,15 +463,13 @@ def finalizar_roteiro_sem_poluir(df_pendentes):
     header = [str(h).strip() for h in aba.row_values(1)]
     header_upper = [h.upper() for h in header]
     
-    col_idx_conc = header_upper.index("CONCLUSÃO") + 1 if "CONCLUSÃO" in header_upper else (header_upper.index("CONCLUSAO") + 1 if "CONCLUSAO" in header_upper else None)
-    
     col_idx_op = header_upper.index("OPERADOR ATRIBUÍDO") + 1 if "OPERADOR ATRIBUÍDO" in header_upper else (header_upper.index("OPERADOR ATRIBUIDO") + 1 if "OPERADOR ATRIBUIDO" in header_upper else None)
     col_idx_dt = header_upper.index("DATA PROGRAMADA") + 1 if "DATA PROGRAMADA" in header_upper else None
     
     celulas = []
     for _, row in df_pendentes.iterrows():
         linha = int(row['Linha_Planilha'])
-        if col_idx_conc: celulas.append(gspread.Cell(row=linha, col=col_idx_conc, value=""))
+        # AQUI TAMBÉM NÃO LIMPAMOS A CONCLUSÃO PARA PRESERVAR A SOLICITAÇÃO!
         if col_idx_op: celulas.append(gspread.Cell(row=linha, col=col_idx_op, value="-"))
         if col_idx_dt: celulas.append(gspread.Cell(row=linha, col=col_idx_dt, value="-"))
         
@@ -642,7 +597,7 @@ if st.session_state.autenticado:
                 
                 if st.button("⬅️ Voltar para a Lista", use_container_width=True):
                     with st.spinner("Voltando..."):
-                        atualizar_status_linha(linha_planilha, "PENDENTE") # DEVOLVE O STATUS PARA PENDENTE NA PLANILHA
+                        atualizar_status_linha(linha_planilha, "PENDENTE") # Função desativada por segurança
                         st.session_state.os_aberta = None
                         if "status_forcado" in st.session_state: del st.session_state["status_forcado"]
                         st.cache_data.clear()
@@ -727,7 +682,6 @@ if st.session_state.autenticado:
                             else:
                                 f_bytes = foto1.getvalue() if foto1 is not None else None
                                 with st.spinner("Devolvendo..."):
-                                    # Alterado aqui para passar a linha também
                                     sucesso = registrar_devolucao(matricula, servico, cidade_bairro, nome_bairro, texto_motivo, operador, f_bytes, linha_planilha)
                                     if sucesso:
                                         st.session_state.os_aberta = None
@@ -751,7 +705,6 @@ if st.session_state.autenticado:
                                 f2_bytes = foto2.getvalue() if foto2 is not None else None
                                 f3_bytes = foto3.getvalue() if foto3 is not None else None
                                 with st.spinner("Encerrando..."):
-                                    # Alterado aqui para passar a linha também
                                     sucesso = registrar_execucao(matricula, servico, operador, cidade_bairro, nome_bairro, f1_bytes, f2_bytes, f3_bytes, linha_planilha)
                                     if sucesso:
                                         st.session_state.os_aberta = None
@@ -907,7 +860,7 @@ if st.session_state.autenticado:
                                         with col_btn1:
                                             if st.button("📂 Abrir Ordem", key=f"abrir_{matricula}", use_container_width=True):
                                                 with st.spinner("Abrindo..."):
-                                                    atualizar_status_linha(linha_planilha, "EM ANDAMENTO") # ENVIA O STATUS PARA A PLANILHA
+                                                    atualizar_status_linha(linha_planilha, "EM ANDAMENTO")
                                                     st.session_state.os_aberta = matricula
                                                     st.session_state.status_forcado = matricula
                                                     st.session_state.bairro_expandido = nome_bairro_tela
@@ -921,7 +874,7 @@ if st.session_state.autenticado:
                                     else:
                                         if st.button("📂 Abrir Ordem", key=f"abrir_unica_{matricula}", use_container_width=True):
                                             with st.spinner("Abrindo..."):
-                                                atualizar_status_linha(linha_planilha, "EM ANDAMENTO") # ENVIA O STATUS PARA A PLANILHA
+                                                atualizar_status_linha(linha_planilha, "EM ANDAMENTO")
                                                 st.session_state.os_aberta = matricula
                                                 st.session_state.status_forcado = matricula
                                                 st.session_state.bairro_expandido = nome_bairro_tela
@@ -930,7 +883,7 @@ if st.session_state.autenticado:
                                 elif status == "EM ANDAMENTO":
                                     if st.button("🚧 Continuar Execução", key=f"cont_{matricula}", type="primary", use_container_width=True):
                                         with st.spinner("Abrindo..."):
-                                            atualizar_status_linha(linha_planilha, "EM ANDAMENTO") # ENVIA O STATUS PARA A PLANILHA
+                                            atualizar_status_linha(linha_planilha, "EM ANDAMENTO")
                                             st.session_state.os_aberta = matricula
                                             st.session_state.status_forcado = matricula
                                             st.session_state.bairro_expandido = nome_bairro_tela

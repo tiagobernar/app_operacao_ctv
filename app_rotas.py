@@ -70,13 +70,12 @@ def obter_conexao():
     try:
         # Lê as credenciais de forma segura direto do Cofre do Streamlit
         credenciais = json.loads(st.secrets["google_credentials"])
-        # CORREÇÃO MÁGICA: Conserta as quebras de linha da chave privada que o Streamlit bagunça
         if "\\n" in credenciais["private_key"]:
             credenciais["private_key"] = credenciais["private_key"].replace("\\n", "\n")
         return gspread.service_account_from_dict(credenciais)
     except Exception as e:
         st.error(f"Erro ao conectar com o Google: {e}")
-        raise e  # <-- CORREÇÃO APLICADA: Mostrar o erro na tela em vez de congelar
+        raise e
 
 def extrair_bairro_inteligente(row):
     bairro_form = str(row.get(COL_BAIRRO, "")).strip()
@@ -178,12 +177,10 @@ def carregar_dados():
                 linha = int(row['Linha_Planilha'])
                 if col_op: celulas.append(gspread.Cell(row=linha, col=col_op, value="-"))
                 if col_dt: celulas.append(gspread.Cell(row=linha, col=col_dt, value="-"))
-                # Deixa a conclusão em branco (Silencioso)
-                if col_conc: celulas.append(gspread.Cell(row=linha, col=col_conc, value=""))
+                # NÃO LIMPA A CONCLUSÃO AQUI PARA NÃO APAGAR O REGISTRO DO SOLICITANTE!
                 
                 df_respostas.at[idx, 'Operador Atribuído'] = "-"
                 df_respostas.at[idx, 'Data Programada'] = "-"
-                df_respostas.at[idx, COL_CONCLUSAO] = ""
                 
             if celulas:
                 aba_respostas.update_cells(celulas)
@@ -287,11 +284,17 @@ def mover_para_pasta(df_alvo, nome_operador, data_programada=""):
     val_dt = data_programada if data_programada != "" else "-"
 
     celulas = []
-    for linha in df_alvo['Linha_Planilha']:
-        celulas.append(gspread.Cell(row=int(linha), col=col_idx_op, value=val_op))
-        celulas.append(gspread.Cell(row=int(linha), col=col_idx_data, value=val_dt))
-        if col_idx_conc:
-            celulas.append(gspread.Cell(row=int(linha), col=col_idx_conc, value="")) 
+    for idx, row in df_alvo.iterrows():
+        linha = int(row['Linha_Planilha'])
+        celulas.append(gspread.Cell(row=linha, col=col_idx_op, value=val_op))
+        celulas.append(gspread.Cell(row=linha, col=col_idx_data, value=val_dt))
+        
+        # Só limpa a conclusão SE for uma ordem que foi DEVOLVIDA e está sendo repassada
+        # Isso protege o texto original do solicitante!
+        conclusao_atual = str(row.get(COL_CONCLUSAO, "")).upper()
+        if col_idx_conc and "DEVOLVID" in conclusao_atual:
+            celulas.append(gspread.Cell(row=linha, col=col_idx_conc, value="")) 
+            
     if celulas: aba.update_cells(celulas)
     st.cache_data.clear() 
 

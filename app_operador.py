@@ -104,7 +104,7 @@ def obter_conexao():
         return gspread.service_account_from_dict(credenciais)
     except Exception as e:
         st.error(f"Erro ao conectar com o Google: {e}")
-        st.stop()
+        raise e  # <-- CORREÇÃO APLICADA: Mostrar o erro na tela em vez de congelar
 
 def fazer_upload_foto(foto_bytes):
     try:
